@@ -138,11 +138,28 @@ router.post('/api/upload', async (ctx) => {
   }
 });
 
-// 查询接口（按门店分组汇总）
+// 获取所有城市群列表（用于前端复选框）
+router.get('/api/cities', async (ctx) => {
+  const citySet = new Set();
+  dataPool.forEach(r => {
+    const city = String(r['城市群'] || '').trim();
+    if (city) citySet.add(city);
+  });
+  ctx.body = { success: true, cities: [...citySet].sort() };
+});
+
+// 查询接口（按门店分组汇总，支持城市群多选筛选）
 router.get('/api/query', async (ctx) => {
-  const { store } = ctx.query;
+  const { store, cities } = ctx.query;
   let result = [...dataPool];
 
+  // 城市群多选筛选（逗号分隔）
+  if (cities) {
+    const cityList = cities.split(',').map(c => c.trim()).filter(Boolean);
+    if (cityList.length > 0) {
+      result = result.filter(r => cityList.includes(String(r['城市群'] || '').trim()));
+    }
+  }
   if (store) result = result.filter(r => String(r['门店/仓编码'] || '').includes(store));
 
   // 按门店/仓编码分组汇总
@@ -150,7 +167,7 @@ router.get('/api/query', async (ctx) => {
   result.forEach(r => {
     const key = String(r['门店/仓编码'] || '').trim();
     if (!groupMap[key]) {
-      groupMap[key] = { storeId: key, skuCount: 0, totalQty: 0, uploader: r._uploader, uploadTime: r._uploadTime };
+      groupMap[key] = { storeId: key, city: String(r['城市群'] || '').trim(), skuCount: 0, totalQty: 0, uploader: r._uploader, uploadTime: r._uploadTime };
     }
     groupMap[key].skuCount += 1;
     groupMap[key].totalQty += Number(r['核查量']) || 0;
@@ -180,16 +197,27 @@ router.get('/api/stats', async (ctx) => {
   };
 });
 
-// 导出接口（导出全部数据为xlsx）
+// 导出接口（支持按城市群筛选导出）
 router.get('/api/export', async (ctx) => {
-  if (dataPool.length === 0) {
+  const { cities } = ctx.query;
+  let result = [...dataPool];
+
+  // 城市群多选筛选
+  if (cities) {
+    const cityList = cities.split(',').map(c => c.trim()).filter(Boolean);
+    if (cityList.length > 0) {
+      result = result.filter(r => cityList.includes(String(r['城市群'] || '').trim()));
+    }
+  }
+
+  if (result.length === 0) {
     ctx.status = 400;
-    ctx.body = { success: false, message: '当前池子中没有数据可导出' };
+    ctx.body = { success: false, message: '当前筛选条件下没有数据可导出' };
     return;
   }
 
-  // 仅导出3列核心数据
-  const exportData = dataPool.map(row => ({
+  const exportData = result.map(row => ({
+    '城市群': row['城市群'] || '',
     '门店/仓编码': row['门店/仓编码'] || '',
     '商品SKU': row['商品SKU'] || '',
     '核查量': row['核查量'] || ''

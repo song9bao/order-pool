@@ -65,6 +65,12 @@
     .filter-group label { font-size: 12px; color: var(--text-hint); font-weight: 500; }
     .filter-group input { padding: 7px 12px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; width: 150px; outline: none; transition: border-color 0.2s; }
     .filter-group input:focus { border-color: var(--primary-dark); }
+    .city-checkboxes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 0; }
+    .city-checkboxes label { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-primary); cursor: pointer; padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; transition: all 0.2s; user-select: none; }
+    .city-checkboxes label:hover { border-color: var(--primary); background: var(--primary-light); }
+    .city-checkboxes input[type="checkbox"] { accent-color: var(--primary-dark); }
+    .city-checkboxes input[type="checkbox"]:checked + span { color: var(--primary-dark); font-weight: 500; }
+    .city-checkboxes label:has(input:checked) { border-color: var(--primary-dark); background: var(--primary-light); }
 
     /* 按钮 */
     .btn { display: inline-flex; align-items: center; gap: 4px; padding: 7px 16px; border: none; border-radius: 4px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; line-height: 1.4; }
@@ -176,6 +182,12 @@
           <input type="text" id="filterStore" placeholder="输入门店/仓编码" />
         </div>
       </div>
+      <div style="margin-top:12px;">
+        <div style="font-size:12px;color:var(--text-hint);font-weight:500;margin-bottom:4px;">城市群（多选筛选）</div>
+        <div class="city-checkboxes" id="cityCheckboxes">
+          <span style="font-size:12px;color:var(--text-hint);">暂无城市群数据，上传后自动显示</span>
+        </div>
+      </div>
       <div class="total-bar">
         <span id="queryTotal">共 0 条数据</span>
       </div>
@@ -183,6 +195,7 @@
         <table id="dataTable">
           <thead>
             <tr>
+              <th>城市群</th>
               <th>门店/仓编码</th>
               <th>核查SKU数量</th>
               <th>核查量汇总</th>
@@ -191,7 +204,7 @@
             </tr>
           </thead>
           <tbody id="dataBody">
-            <tr><td colspan="5" class="table-empty"><div class="empty-icon">📋</div><div>暂无数据，请先上传下单表</div></td></tr>
+            <tr><td colspan="6" class="table-empty"><div class="empty-icon">📋</div><div>暂无数据，请先上传下单表</div></td></tr>
           </tbody>
         </table>
       </div>
@@ -287,6 +300,7 @@
         const data = await resp.json();
         if (data.success) {
           showToast(data.message, 'success');
+          loadCities();
           refreshStats();
           doQuery();
         } else if (data.duplicates) {
@@ -309,10 +323,17 @@
     }
     function closeDupModal() { document.getElementById('dupModal').classList.add('hidden'); }
 
+    function getSelectedCities() {
+      const checks = document.querySelectorAll('#cityCheckboxes input[type="checkbox"]:checked');
+      return Array.from(checks).map(c => c.value);
+    }
+
     async function doQuery() {
       const p = new URLSearchParams();
       const store = document.getElementById('filterStore').value.trim();
       if (store) p.set('store', store);
+      const cities = getSelectedCities();
+      if (cities.length) p.set('cities', cities.join(','));
 
       try {
         const resp = await fetch('/api/query?' + p.toString());
@@ -327,10 +348,11 @@
     function renderTable(rows) {
       const body = document.getElementById('dataBody');
       if (!rows.length) {
-        body.innerHTML = '<tr><td colspan="5" class="table-empty"><div class="empty-icon">📋</div><div>暂无数据，请先上传下单表</div></td></tr>';
+        body.innerHTML = '<tr><td colspan="6" class="table-empty"><div class="empty-icon">📋</div><div>暂无数据，请先上传下单表</div></td></tr>';
         return;
       }
       body.innerHTML = rows.map(r => `<tr>
+        <td>${r.city || ''}</td>
         <td>${r.storeId || ''}</td>
         <td>${r.skuCount || 0}</td>
         <td>${r.totalQty || 0}</td>
@@ -341,7 +363,10 @@
 
     async function doExport() {
       try {
-        const resp = await fetch('/api/export');
+        const p = new URLSearchParams();
+        const cities = getSelectedCities();
+        if (cities.length) p.set('cities', cities.join(','));
+        const resp = await fetch('/api/export?' + p.toString());
         if (!resp.ok) { const e = await resp.json(); showToast(e.message, 'error'); return; }
         const blob = await resp.blob();
         const url = URL.createObjectURL(blob);
@@ -416,6 +441,20 @@
       setTimeout(() => el.remove(), 3500);
     }
 
+    async function loadCities() {
+      try {
+        const resp = await fetch('/api/cities');
+        const data = await resp.json();
+        if (data.success && data.cities.length > 0) {
+          const container = document.getElementById('cityCheckboxes');
+          container.innerHTML = data.cities.map(c => 
+            `<label><input type="checkbox" value="${c}"><span>${c}</span></label>`
+          ).join('');
+        }
+      } catch (err) {}
+    }
+
+    loadCities();
     refreshStats();
     doQuery();
   </script>
