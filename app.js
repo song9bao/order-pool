@@ -227,14 +227,14 @@ router.get('/api/export', async (ctx) => {
   const exportData = result.map(row => ({
     '城市群': row['城市群'] || '',
     '门店/仓编码': row['门店/仓编码'] || '',
-    '商品SKU': row['商品SKU'] || '',
-    '核查量': row['核查量'] || ''
+    '商品SKU': String(row['商品SKU'] || ''),
+    '核查量': Number(row['核查量']) || 0
   }));
 
   const ws = XLSX.utils.json_to_sheet(exportData);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '集单池数据');
-  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', compression: true });
 
   const today = new Date().toISOString().slice(0, 10);
   ctx.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
