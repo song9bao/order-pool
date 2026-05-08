@@ -173,7 +173,8 @@
         <div class="card-title">数据查询</div>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-primary" onclick="doQuery()">查询</button>
-          <button class="btn btn-success" onclick="doExport()">统一导出</button>
+          <button class="btn btn-success" onclick="doExport('csv')">导出CSV</button>
+          <button class="btn btn-outline" onclick="doExport('xlsx')">导出Excel</button>
         </div>
       </div>
       <div class="filter-bar">
@@ -361,10 +362,11 @@
       </tr>`).join('');
     }
 
-    function doExport() {
+    function doExport(format) {
       const p = new URLSearchParams();
       const cities = getSelectedCities();
       if (cities.length) p.set('cities', cities.join(','));
+      if (format) p.set('format', format);
       // 直接用链接下载，避免大文件 blob 卡死浏览器
       window.open('/api/export?' + p.toString(), '_blank');
     }

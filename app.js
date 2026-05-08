@@ -205,9 +205,9 @@ router.get('/api/stats', async (ctx) => {
   };
 });
 
-// 导出接口（支持按城市群筛选导出）
+// 导出接口（支持按城市群筛选，支持 format=csv）
 router.get('/api/export', async (ctx) => {
-  const { cities } = ctx.query;
+  const { cities, format } = ctx.query;
   let result = [...dataPool];
 
   // 城市群多选筛选
@@ -224,22 +224,41 @@ router.get('/api/export', async (ctx) => {
     return;
   }
 
-  const exportData = result.map(row => ({
-    '城市群': row['城市群'] || '',
-    '门店/仓编码': row['门店/仓编码'] || '',
-    '商品SKU': String(row['商品SKU'] || ''),
-    '核查量': Number(row['核查量']) || 0
-  }));
-
-  const ws = XLSX.utils.json_to_sheet(exportData);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, '集单池数据');
-  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', compression: true });
-
   const today = new Date().toISOString().slice(0, 10);
-  ctx.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  ctx.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent('集单池_' + today + '.xlsx')}`);
-  ctx.body = Buffer.from(buf);
+
+  if (format === 'csv') {
+    // CSV 格式导出（文件更小，下载更快）
+    const BOM = '\uFEFF'; // UTF-8 BOM，确保 Excel 正确识别中文
+    const header = '城市群,门店/仓编码,商品SKU,核查量\n';
+    const rows = result.map(row => {
+      const city = String(row['城市群'] || '').replace(/,/g, '，');
+      const store = String(row['门店/仓编码'] || '');
+      const sku = String(row['商品SKU'] || '');
+      const qty = Number(row['核查量']) || 0;
+      return `${city},${store},${sku},${qty}`;
+    }).join('\n');
+
+    ctx.set('Content-Type', 'text/csv; charset=utf-8');
+    ctx.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent('集单池_' + today + '.csv')}`);
+    ctx.body = BOM + header + rows;
+  } else {
+    // XLSX 格式导出
+    const exportData = result.map(row => ({
+      '城市群': row['城市群'] || '',
+      '门店/仓编码': row['门店/仓编码'] || '',
+      '商品SKU': String(row['商品SKU'] || ''),
+      '核查量': Number(row['核查量']) || 0
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '集单池数据');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', compression: true });
+
+    ctx.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    ctx.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent('集单池_' + today + '.xlsx')}`);
+    ctx.body = Buffer.from(buf);
+  }
 });
 
 // 撤回接口（只能撤回自己上传的）
