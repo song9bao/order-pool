@@ -75,12 +75,19 @@ router.post('/api/upload', async (ctx) => {
       return;
     }
 
+    // 构建已有SKU索引（O(1)查找）
+    const existingSkuMap = new Map();
+    dataPool.forEach(d => {
+      const sku = String(d['商品SKU'] || '').trim();
+      if (sku) existingSkuMap.set(sku, d);
+    });
+
     // 检查重复SKU
     const duplicates = [];
     rows.forEach((row, idx) => {
       const sku = String(row['商品SKU'] || '').trim();
       if (!sku) return;
-      const existing = dataPool.find(d => String(d['商品SKU']).trim() === sku);
+      const existing = existingSkuMap.get(sku);
       if (existing) {
         duplicates.push({
           sku,
@@ -117,7 +124,8 @@ router.post('/api/upload', async (ctx) => {
       _uploadId: uploadId
     }));
 
-    dataPool.push(...enrichedRows);
+    // 用 concat 代替 push(...) 避免大数组栈溢出
+    dataPool = dataPool.concat(enrichedRows);
     uploadRecords.push({
       id: uploadId,
       uploader,
