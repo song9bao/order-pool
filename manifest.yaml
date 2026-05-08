@@ -1,0 +1,26 @@
+version: v1.0
+
+build:
+    tools:
+        node: 18
+    run:
+        workDir: ./
+        cmd: npm install --production
+    target:
+        distDir: ./
+        files:
+            - ./app.js
+            - ./public/
+            - ./package.json
+            - ./package-lock.json
+            - ./node_modules/
+
+autodeploy:
+    hulkos: centos7
+    tools:
+        node: 18
+    targetDir: /opt/meituan/order-pool
+    run: node app.js
+    check: curl -s http://localhost:3000/api/stats
+    checkRetry: 30
+    checkInterval: 5s

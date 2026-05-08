@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>集单池 - 统一下单汇集平台</title>
+  <style>
+    :root {
+      --primary: #FFCE00;
+      --primary-dark: #E6B800;
+      --primary-light: #FFF8D6;
+      --text-primary: #333333;
+      --text-secondary: #666666;
+      --text-hint: #999999;
+      --border: #E8E8E8;
+      --bg-page: #F5F5F5;
+      --bg-white: #FFFFFF;
+      --success: #00B365;
+      --danger: #FF4D4F;
+      --warning: #FF8C00;
+      --shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg-page); color: var(--text-primary); font-size: 14px; line-height: 1.5; }
+
+    /* 顶部导航 */
+    .navbar { background: var(--bg-white); height: 56px; display: flex; align-items: center; padding: 0 24px; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+    .navbar-logo { display: flex; align-items: center; gap: 10px; }
+    .navbar-logo .logo-icon { width: 32px; height: 32px; background: var(--primary); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+    .navbar-logo .logo-text { font-size: 18px; font-weight: 600; color: var(--text-primary); }
+    .navbar-right { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+    .navbar-user { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--primary-light); border-radius: 20px; font-size: 13px; }
+    .navbar-user.missing { background: #FFF1F0; border: 1.5px solid var(--danger); animation: pulse 1.5s infinite; }
+    .navbar-user .required-star { color: var(--danger); font-weight: bold; }
+    @keyframes pulse { 0%,100%{box-shadow:none} 50%{box-shadow:0 0 8px rgba(255,77,79,0.4)} }
+    .navbar-stats { font-size: 13px; color: var(--text-secondary); }
+
+    /* 主内容区 */
+    .main { max-width: 1440px; margin: 0 auto; padding: 20px 24px; }
+
+    /* 卡片 */
+    .card { background: var(--bg-white); border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: var(--shadow); }
+    .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .card-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .card-title::before { content: ''; display: inline-block; width: 3px; height: 16px; background: var(--primary); border-radius: 2px; }
+
+    /* 用户输入 */
+    .user-bar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--primary-light); border-radius: 6px; margin-bottom: 16px; }
+    .user-bar label { font-weight: 500; color: var(--text-primary); white-space: nowrap; }
+    .user-bar input { padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; width: 200px; outline: none; transition: border-color 0.2s; }
+    .user-bar input:focus { border-color: var(--primary-dark); }
+    .user-bar .hint { font-size: 12px; color: var(--text-hint); }
+
+    /* 上传区 */
+    .upload-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 48px 24px; text-align: center; transition: all 0.3s; cursor: pointer; background: #FAFAFA; }
+    .upload-zone:hover, .upload-zone.drag-over { border-color: var(--primary); background: var(--primary-light); }
+    .upload-zone .icon { font-size: 40px; margin-bottom: 12px; color: var(--primary-dark); }
+    .upload-zone .text { font-size: 14px; color: var(--text-secondary); margin-bottom: 4px; }
+    .upload-zone .sub { font-size: 12px; color: var(--text-hint); }
+    #fileInput { display: none; }
+
+    /* 筛选区 */
+    .filter-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+    .filter-group { display: flex; flex-direction: column; gap: 4px; }
+    .filter-group label { font-size: 12px; color: var(--text-hint); font-weight: 500; }
+    .filter-group input { padding: 7px 12px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; width: 150px; outline: none; transition: border-color 0.2s; }
+    .filter-group input:focus { border-color: var(--primary-dark); }
+
+    /* 按钮 */
+    .btn { display: inline-flex; align-items: center; gap: 4px; padding: 7px 16px; border: none; border-radius: 4px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; line-height: 1.4; }
+    .btn-primary { background: var(--primary); color: var(--text-primary); }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-outline { background: var(--bg-white); color: var(--text-primary); border: 1px solid var(--border); }
+    .btn-outline:hover { border-color: var(--primary); color: var(--primary-dark); }
+    .btn-danger { background: var(--bg-white); color: var(--danger); border: 1px solid var(--danger); }
+    .btn-danger:hover { background: #FFF1F0; }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-success:hover { background: #009955; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* 表格 */
+    .table-wrapper { overflow-x: auto; margin-top: 12px; border: 1px solid var(--border); border-radius: 6px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { padding: 10px 12px; text-align: left; background: #FAFAFA; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border); white-space: nowrap; font-size: 12px; }
+    td { padding: 10px 12px; border-bottom: 1px solid #F5F5F5; white-space: nowrap; color: var(--text-primary); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--primary-light); }
+    .table-empty { text-align: center; padding: 48px; color: var(--text-hint); }
+    .table-empty .empty-icon { font-size: 36px; margin-bottom: 8px; opacity: 0.5; }
+
+    /* 记录列表 */
+    .record-list { max-height: 320px; overflow-y: auto; }
+    .record-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; transition: all 0.2s; }
+    .record-item:hover { border-color: var(--primary); background: var(--primary-light); }
+    .record-info { flex: 1; }
+    .record-info .filename { font-weight: 500; color: var(--text-primary); margin-bottom: 2px; }
+    .record-info .meta { font-size: 12px; color: var(--text-hint); }
+    .record-badge { display: inline-block; padding: 2px 8px; background: var(--primary-light); border-radius: 10px; font-size: 12px; color: var(--primary-dark); font-weight: 500; margin-left: 8px; }
+
+    /* 总数提示 */
+    .total-bar { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding: 8px 0; font-size: 13px; color: var(--text-secondary); }
+
+    /* Toast */
+    .toast { position: fixed; top: 70px; right: 24px; padding: 12px 20px; border-radius: 6px; color: #fff; font-size: 14px; z-index: 9999; animation: toastIn 0.3s ease; max-width: 480px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .toast.success { background: var(--success); }
+    .toast.error { background: var(--danger); }
+    .toast.warning { background: var(--warning); }
+    @keyframes toastIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    /* Modal */
+    .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+    .modal { background: var(--bg-white); border-radius: 8px; padding: 24px; width: 640px; max-width: 90vw; max-height: 80vh; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+    .modal-title { font-size: 16px; font-weight: 600; color: var(--danger); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .modal-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
+    .modal-footer { margin-top: 20px; text-align: right; }
+    .dup-table { width: 100%; }
+    .dup-table th { background: #FFF1F0; color: var(--danger); }
+    .hidden { display: none; }
+
+    /* 响应式 */
+    @media (max-width: 768px) {
+      .filter-bar { gap: 8px; }
+      .filter-group input { width: 120px; }
+      .main { padding: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <!-- 顶部导航 -->
+  <nav class="navbar">
+    <div class="navbar-logo">
+      <div class="logo-icon">📦</div>
+      <span class="logo-text">集单池</span>
+    </div>
+    <div class="navbar-right">
+      <span class="navbar-stats" id="headerStats">今日：0 条数据 / 0 次上传</span>
+      <div class="navbar-user" id="userNameBox">
+        <span>👤</span>
+        <span class="required-star">*</span>
+        <input type="text" id="userName" placeholder="请输入姓名（必填）" style="border:none;background:transparent;width:120px;font-size:13px;outline:none;" />
+      </div>
+    </div>
+  </nav>
+
+  <div class="main">
+    <!-- 上传区域 -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">上传下单表</div>
+        <span style="font-size:12px;color:var(--text-hint);">支持 .xlsx / .xls 格式，系统自动校验SKU重复</span>
+      </div>
+      <div class="upload-zone" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+        <div class="icon">⬆️</div>
+        <div class="text">点击选择文件，或将文件拖拽至此区域</div>
+        <div class="sub">单文件最大 50MB，上传后自动合入当日集单池</div>
+      </div>
+      <input type="file" id="fileInput" accept=".xlsx,.xls" />
+      <div style="margin-top:12px;padding:8px 16px;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:13px;color:var(--text-secondary);">📄 不清楚格式？</span>
+        <a href="/集单池上传模板.xlsx" download style="font-size:13px;color:#1677FF;text-decoration:none;font-weight:500;">下载上传模板</a>
+      </div>
+    </div>
+
+    <!-- 查询 & 导出 -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">数据查询</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary" onclick="doQuery()">查询</button>
+          <button class="btn btn-success" onclick="doExport()">统一导出</button>
+        </div>
+      </div>
+      <div class="filter-bar">
+        <div class="filter-group">
+          <label>门店/仓编码</label>
+          <input type="text" id="filterStore" placeholder="输入门店/仓编码" />
+        </div>
+      </div>
+      <div class="total-bar">
+        <span id="queryTotal">共 0 条数据</span>
+      </div>
+      <div class="table-wrapper">
+        <table id="dataTable">
+          <thead>
+            <tr>
+              <th>门店/仓编码</th>
+              <th>核查SKU数量</th>
+              <th>核查量汇总</th>
+              <th>上传人</th>
+              <th>上传时间</th>
+            </tr>
+          </thead>
+          <tbody id="dataBody">
+            <tr><td colspan="5" class="table-empty"><div class="empty-icon">📋</div><div>暂无数据，请先上传下单表</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 上传记录 & 撤回 -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">上传记录</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span style="font-size:12px;color:var(--text-hint);">仅可撤回自己上传的数据，每日 23:59 自动清零</span>
+          <button class="btn btn-danger" onclick="doClearAll()">🗑️ 一键清空</button>
+        </div>
+      </div>
+      <div class="record-list" id="recordList">
+        <div class="table-empty"><div class="empty-icon">📝</div><div>暂无上传记录</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 重复提示弹窗 -->
+  <div class="modal-mask hidden" id="dupModal">
+    <div class="modal">
+      <div class="modal-title">⚠️ 发现重复SKU，上传已拦截</div>
+      <div class="modal-desc">以下SKU已被其他人上传到集单池中，请确认后修改数据再上传：</div>
+      <div class="table-wrapper">
+        <table class="dup-table">
+          <thead><tr><th>行号</th><th>商品SKU</th><th>商品名称</th><th>已上传人</th><th>上传时间</th></tr></thead>
+          <tbody id="dupBody"></tbody>
+        </table>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="closeDupModal()">我知道了</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const userInput = document.getElementById('userName');
+    const userNameBox = document.getElementById('userNameBox');
+    userInput.value = localStorage.getItem('orderPoolUser') || '';
+    updateUserNameStyle();
+    userInput.addEventListener('input', () => {
+      localStorage.setItem('orderPoolUser', userInput.value.trim());
+      updateUserNameStyle();
+    });
+    userInput.addEventListener('change', () => {
+      localStorage.setItem('orderPoolUser', userInput.value.trim());
+      updateUserNameStyle();
+    });
+    function updateUserNameStyle() {
+      if (!userInput.value.trim()) {
+        userNameBox.classList.add('missing');
+      } else {
+        userNameBox.classList.remove('missing');
+      }
+    }
+
+    function getUser() {
+      const u = userInput.value.trim();
+      if (!u) {
+        showToast('请先输入您的姓名（必填）', 'error');
+        userInput.focus();
+        userNameBox.classList.add('missing');
+        return null;
+      }
+      return u;
+    }
+
+    // 拖拽
+    const uploadArea = document.getElementById('uploadArea');
+    uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+    uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+    uploadArea.addEventListener('drop', e => {
+      e.preventDefault();
+      uploadArea.classList.remove('drag-over');
+      if (e.dataTransfer.files[0]) handleUpload(e.dataTransfer.files[0]);
+    });
+    document.getElementById('fileInput').addEventListener('change', e => {
+      if (e.target.files[0]) handleUpload(e.target.files[0]);
+      e.target.value = '';
+    });
+
+    async function handleUpload(file) {
+      const user = getUser();
+      if (!user) return;
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('uploader', user);
+      try {
+        uploadArea.innerHTML = '<div class="text">⏳ 上传中，请稍候...</div>';
+        const resp = await fetch('/api/upload', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (data.success) {
+          showToast(data.message, 'success');
+          refreshStats();
+          doQuery();
+        } else if (data.duplicates) {
+          showDuplicates(data.duplicates);
+        } else {
+          showToast(data.message, 'error');
+        }
+      } catch (err) {
+        showToast('上传失败: ' + err.message, 'error');
+      } finally {
+        uploadArea.innerHTML = '<div class="icon">⬆️</div><div class="text">点击选择文件，或将文件拖拽至此区域</div><div class="sub">单文件最大 50MB，上传后自动合入当日集单池</div>';
+      }
+    }
+
+    function showDuplicates(dups) {
+      document.getElementById('dupBody').innerHTML = dups.map(d =>
+        `<tr><td>${d.rowIndex}</td><td>${d.sku}</td><td>${d.productName || '-'}</td><td>${d.conflictWith}</td><td>${d.conflictTime}</td></tr>`
+      ).join('');
+      document.getElementById('dupModal').classList.remove('hidden');
+    }
+    function closeDupModal() { document.getElementById('dupModal').classList.add('hidden'); }
+
+    async function doQuery() {
+      const p = new URLSearchParams();
+      const store = document.getElementById('filterStore').value.trim();
+      if (store) p.set('store', store);
+
+      try {
+        const resp = await fetch('/api/query?' + p.toString());
+        const data = await resp.json();
+        if (data.success) {
+          document.getElementById('queryTotal').textContent = `共 ${data.total} 个门店`;
+          renderTable(data.data);
+        }
+      } catch (err) { showToast('查询失败', 'error'); }
+    }
+
+    function renderTable(rows) {
+      const body = document.getElementById('dataBody');
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="5" class="table-empty"><div class="empty-icon">📋</div><div>暂无数据，请先上传下单表</div></td></tr>';
+        return;
+      }
+      body.innerHTML = rows.map(r => `<tr>
+        <td>${r.storeId || ''}</td>
+        <td>${r.skuCount || 0}</td>
+        <td>${r.totalQty || 0}</td>
+        <td>${r.uploader || ''}</td>
+        <td>${r.uploadTime || ''}</td>
+      </tr>`).join('');
+    }
+
+    async function doExport() {
+      try {
+        const resp = await fetch('/api/export');
+        if (!resp.ok) { const e = await resp.json(); showToast(e.message, 'error'); return; }
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `集单池_${new Date().toISOString().slice(0,10)}.xlsx`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('导出成功', 'success');
+      } catch (err) { showToast('导出失败', 'error'); }
+    }
+
+    async function refreshStats() {
+      try {
+        const resp = await fetch('/api/stats');
+        const data = await resp.json();
+        if (data.success) {
+          document.getElementById('headerStats').textContent = `今日：${data.totalRows} 条数据 / ${data.totalUploads} 次上传`;
+          renderRecords(data.records);
+        }
+      } catch (err) {}
+    }
+
+    function renderRecords(records) {
+      const list = document.getElementById('recordList');
+      const currentUser = userInput.value.trim();
+      if (!records.length) {
+        list.innerHTML = '<div class="table-empty"><div class="empty-icon">📝</div><div>暂无上传记录</div></div>';
+        return;
+      }
+      list.innerHTML = records.map(r => `<div class="record-item">
+        <div class="record-info">
+          <div class="filename">📁 ${r.fileName} <span class="record-badge">${r.rowCount} 条</span></div>
+          <div class="meta">${r.uploader} · ${r.uploadTime}</div>
+        </div>
+        ${r.uploader === currentUser ? `<button class="btn btn-danger" onclick="doRevoke('${r.id}')">撤回</button>` : '<span style="font-size:12px;color:var(--text-hint);">他人上传</span>'}
+      </div>`).join('');
+    }
+
+    async function doRevoke(uploadId) {
+      const user = getUser();
+      if (!user) return;
+      if (!confirm('确定要撤回这次上传的全部数据吗？撤回后无法恢复。')) return;
+      try {
+        const resp = await fetch('/api/revoke', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uploadId, uploader: user })
+        });
+        const data = await resp.json();
+        if (data.success) { showToast('撤回成功', 'success'); refreshStats(); doQuery(); }
+        else { showToast(data.message, 'error'); }
+      } catch (err) { showToast('撤回失败', 'error'); }
+    }
+
+    async function doClearAll() {
+      if (!confirm('⚠️ 确定要清空集单池中所有数据吗？\n\n此操作将清除所有人上传的全部数据，且无法恢复！')) return;
+      if (!confirm('再次确认：清空后无法恢复，是否继续？')) return;
+      try {
+        const resp = await fetch('/api/clear', { method: 'POST' });
+        const data = await resp.json();
+        if (data.success) { showToast('已清空全部数据', 'success'); refreshStats(); doQuery(); }
+        else { showToast(data.message, 'error'); }
+      } catch (err) { showToast('清空失败', 'error'); }
+    }
+
+    function showToast(msg, type) {
+      const el = document.createElement('div');
+      el.className = `toast ${type}`;
+      el.textContent = msg;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 3500);
+    }
+
+    refreshStats();
+    doQuery();
+  </script>
+</body>
+</html>

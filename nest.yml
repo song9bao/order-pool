@@ -1,0 +1,31 @@
+# Nest Serverless 配置文件
+# 文档: https://nest.sankuai.com/docs
+
+# 应用类型: web (HTTP 服务)
+type: web
+
+# 运行时
+runtime: nodejs18
+
+# 入口文件
+entry: app.js
+
+# 端口（Nest 默认会注入 PORT 环境变量）
+port: 3000
+
+# 构建配置
+build:
+  # 安装依赖命令
+  install: npm install --production
+  
+# 实例配置
+instance:
+  # 内存限制 (MB)
+  memory: 256
+  # 超时时间 (秒)
+  timeout: 30
+
+# 环境变量
+env:
+  NODE_ENV: production
+  TZ: Asia/Shanghai
