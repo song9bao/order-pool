@@ -172,11 +172,23 @@ router.get('/api/uploaders', async (ctx) => {
   ctx.body = { success: true, uploaders: [...new Set(uploaders)].sort() };
 });
 
-// 查询接口（按门店分组汇总，支持城市群+上传人筛选）
+// 获取所有门店列表（用于前端复选框）
+router.get('/api/stores', async (ctx) => {
+  const storeSet = new Set();
+  for (let i = 0; i < dataPool.length; i++) {
+    const s = String(dataPool[i][COL_STORE]).trim();
+    if (s) storeSet.add(s);
+  }
+  ctx.body = { success: true, stores: [...storeSet].sort() };
+});
+
+// 查询接口（按门店分组汇总，支持城市群+门店多选+上传人筛选）
 router.get('/api/query', async (ctx) => {
-  const { store, cities, uploader } = ctx.query;
+  const { store, stores, cities, uploader } = ctx.query;
   const cityList = cities ? cities.split(',').map(c => c.trim()).filter(Boolean) : [];
   const citySet = cityList.length > 0 ? new Set(cityList) : null;
+  const storeList = stores ? stores.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const storeSet = storeList.length > 0 ? new Set(storeList) : null;
 
   // 构建 uploadId -> record 的快速索引
   const recMap = new Map();
@@ -197,17 +209,18 @@ router.get('/api/query', async (ctx) => {
     if (citySet && !citySet.has(row[COL_CITY])) continue;
     // 上传人筛选
     if (uploaderIds && !uploaderIds.has(row[COL_UPLOAD_ID])) continue;
-    // 门店筛选
-    const storeId = String(row[COL_STORE]);
+    // 门店多选筛选
+    const storeId = String(row[COL_STORE]).trim();
+    if (storeSet && !storeSet.has(storeId)) continue;
+    // 门店输入框模糊筛选
     if (store && !storeId.includes(store)) continue;
 
-    const key = storeId.trim();
-    if (!groupMap[key]) {
+    if (!groupMap[storeId]) {
       const rec = recMap.get(row[COL_UPLOAD_ID]);
-      groupMap[key] = { storeId: key, city: row[COL_CITY], skuCount: 0, totalQty: 0, uploader: rec ? rec.uploader : '', uploadTime: rec ? rec.uploadTime : '' };
+      groupMap[storeId] = { storeId, city: row[COL_CITY], skuCount: 0, totalQty: 0, uploader: rec ? rec.uploader : '', uploadTime: rec ? rec.uploadTime : '' };
     }
-    groupMap[key].skuCount += 1;
-    groupMap[key].totalQty += row[COL_QTY];
+    groupMap[storeId].skuCount += 1;
+    groupMap[storeId].totalQty += row[COL_QTY];
   }
 
   const grouped = Object.values(groupMap);
@@ -229,11 +242,13 @@ router.get('/api/stats', async (ctx) => {
   };
 });
 
-// 导出接口（支持按城市群+上传人筛选，支持 format=csv）
+// 导出接口（支持按城市群+门店多选+上传人筛选，支持 format=csv）
 router.get('/api/export', async (ctx) => {
-  const { cities, format, uploader } = ctx.query;
+  const { cities, stores, format, uploader } = ctx.query;
   const cityList = cities ? cities.split(',').map(c => c.trim()).filter(Boolean) : [];
   const citySet = cityList.length > 0 ? new Set(cityList) : null;
+  const storeList = stores ? stores.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const storeSet = storeList.length > 0 ? new Set(storeList) : null;
 
   // 上传人筛选：找出匹配的 uploadId 集合
   let uploaderIds = null;
@@ -243,13 +258,14 @@ router.get('/api/export', async (ctx) => {
   }
 
   // 筛选数据
-  const needFilter = citySet || uploaderIds;
+  const needFilter = citySet || storeSet || uploaderIds;
   let filtered;
   if (needFilter) {
     filtered = [];
     for (let i = 0; i < dataPool.length; i++) {
       const row = dataPool[i];
       if (citySet && !citySet.has(row[COL_CITY])) continue;
+      if (storeSet && !storeSet.has(String(row[COL_STORE]).trim())) continue;
       if (uploaderIds && !uploaderIds.has(row[COL_UPLOAD_ID])) continue;
       filtered.push(row);
     }
