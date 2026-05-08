@@ -11,7 +11,9 @@ const router = new Router();
 const PORT = process.env.PORT || 3000;
 
 // 数据存储（内存，每日清零）
-let dataPool = [];       // 所有上传的行数据
+// dataPool 紧凑格式：每行为 [城市群, 门店/仓编码, 商品SKU, 核查量, uploadId]
+const COL_CITY = 0, COL_STORE = 1, COL_SKU = 2, COL_QTY = 3, COL_UPLOAD_ID = 4;
+let dataPool = [];       // 所有上传的行数据（紧凑数组）
 let uploadRecords = [];  // 上传记录 {id, uploader, fileName, uploadTime, rowCount}
 let lastActiveDate = new Date().toISOString().slice(0, 10); // 记录当前日期
 
@@ -77,23 +79,24 @@ router.post('/api/upload', async (ctx) => {
 
     // 构建已有SKU索引（O(1)查找）
     const existingSkuMap = new Map();
-    dataPool.forEach(d => {
-      const sku = String(d['商品SKU'] || '').trim();
-      if (sku) existingSkuMap.set(sku, d);
-    });
+    for (let i = 0; i < dataPool.length; i++) {
+      const sku = dataPool[i][COL_SKU];
+      if (sku) existingSkuMap.set(sku, dataPool[i][COL_UPLOAD_ID]);
+    }
 
     // 检查重复SKU
     const duplicates = [];
     rows.forEach((row, idx) => {
       const sku = String(row['商品SKU'] || '').trim();
       if (!sku) return;
-      const existing = existingSkuMap.get(sku);
-      if (existing) {
+      const existingUploadId = existingSkuMap.get(sku);
+      if (existingUploadId) {
+        const rec = uploadRecords.find(r => r.id === existingUploadId);
         duplicates.push({
           sku,
           rowIndex: idx + 2,
-          existingUploader: existing._uploader,
-          existingUploadTime: existing._uploadTime,
+          existingUploader: rec ? rec.uploader : '未知',
+          existingUploadTime: rec ? rec.uploadTime : '',
           productName: row['商品名称'] || ''
         });
       }
@@ -114,18 +117,25 @@ router.post('/api/upload', async (ctx) => {
       return;
     }
 
-    // 写入数据池
+    // 写入数据池（紧凑存储，只保留必要字段）
     const uploadId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
     const uploadTime = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-    const enrichedRows = rows.map(row => ({
-      ...row,
-      _uploader: uploader,
-      _uploadTime: uploadTime,
-      _uploadId: uploadId
-    }));
+    // 每行存为 [城市群, 门店/仓编码, 商品SKU, 核查量, uploadId]
+    // uploader 和 uploadTime 存在 uploadRecords 里，通过 uploadId 关联，避免每行重复存储
+    const compactRows = new Array(rows.length);
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      compactRows[i] = [
+        String(row['城市群'] || '').trim(),
+        row['门店/仓编码'] != null ? row['门店/仓编码'] : '',
+        row['商品SKU'] != null ? String(row['商品SKU']) : '',
+        Number(row['核查量']) || 0,
+        uploadId
+      ];
+    }
 
     // 用 concat 代替 push(...) 避免大数组栈溢出
-    dataPool = dataPool.concat(enrichedRows);
+    dataPool = dataPool.concat(compactRows);
     uploadRecords.push({
       id: uploadId,
       uploader,
@@ -149,42 +159,41 @@ router.post('/api/upload', async (ctx) => {
 // 获取所有城市群列表（用于前端复选框）
 router.get('/api/cities', async (ctx) => {
   const citySet = new Set();
-  dataPool.forEach(r => {
-    const city = String(r['城市群'] || '').trim();
+  for (let i = 0; i < dataPool.length; i++) {
+    const city = dataPool[i][COL_CITY];
     if (city) citySet.add(city);
-  });
+  }
   ctx.body = { success: true, cities: [...citySet].sort() };
 });
 
 // 查询接口（按门店分组汇总，支持城市群多选筛选）
 router.get('/api/query', async (ctx) => {
   const { store, cities } = ctx.query;
-  let result = [...dataPool];
+  const cityList = cities ? cities.split(',').map(c => c.trim()).filter(Boolean) : [];
+  const citySet = cityList.length > 0 ? new Set(cityList) : null;
 
-  // 城市群多选筛选（逗号分隔）
-  if (cities) {
-    const cityList = cities.split(',').map(c => c.trim()).filter(Boolean);
-    if (cityList.length > 0) {
-      result = result.filter(r => cityList.includes(String(r['城市群'] || '').trim()));
-    }
-  }
-  if (store) result = result.filter(r => String(r['门店/仓编码'] || '').includes(store));
+  // 构建 uploadId -> record 的快速索引
+  const recMap = new Map();
+  uploadRecords.forEach(r => recMap.set(r.id, r));
 
   // 按门店/仓编码分组汇总
   const groupMap = {};
-  result.forEach(r => {
-    const key = String(r['门店/仓编码'] || '').trim();
+  for (let i = 0; i < dataPool.length; i++) {
+    const row = dataPool[i];
+    // 城市群筛选
+    if (citySet && !citySet.has(row[COL_CITY])) continue;
+    // 门店筛选
+    const storeId = String(row[COL_STORE]);
+    if (store && !storeId.includes(store)) continue;
+
+    const key = storeId.trim();
     if (!groupMap[key]) {
-      groupMap[key] = { storeId: key, city: String(r['城市群'] || '').trim(), skuCount: 0, totalQty: 0, uploader: r._uploader, uploadTime: r._uploadTime };
+      const rec = recMap.get(row[COL_UPLOAD_ID]);
+      groupMap[key] = { storeId: key, city: row[COL_CITY], skuCount: 0, totalQty: 0, uploader: rec ? rec.uploader : '', uploadTime: rec ? rec.uploadTime : '' };
     }
     groupMap[key].skuCount += 1;
-    groupMap[key].totalQty += Number(r['核查量']) || 0;
-    // 取最新的上传人和时间
-    if (r._uploadTime > groupMap[key].uploadTime) {
-      groupMap[key].uploader = r._uploader;
-      groupMap[key].uploadTime = r._uploadTime;
-    }
-  });
+    groupMap[key].totalQty += row[COL_QTY];
+  }
 
   const grouped = Object.values(groupMap);
 
@@ -208,17 +217,21 @@ router.get('/api/stats', async (ctx) => {
 // 导出接口（支持按城市群筛选，支持 format=csv）
 router.get('/api/export', async (ctx) => {
   const { cities, format } = ctx.query;
-  let result = [...dataPool];
+  const cityList = cities ? cities.split(',').map(c => c.trim()).filter(Boolean) : [];
+  const citySet = cityList.length > 0 ? new Set(cityList) : null;
 
-  // 城市群多选筛选
-  if (cities) {
-    const cityList = cities.split(',').map(c => c.trim()).filter(Boolean);
-    if (cityList.length > 0) {
-      result = result.filter(r => cityList.includes(String(r['城市群'] || '').trim()));
+  // 筛选数据（不复制整个数组，用索引记录）
+  let filtered;
+  if (citySet) {
+    filtered = [];
+    for (let i = 0; i < dataPool.length; i++) {
+      if (citySet.has(dataPool[i][COL_CITY])) filtered.push(dataPool[i]);
     }
+  } else {
+    filtered = dataPool;
   }
 
-  if (result.length === 0) {
+  if (filtered.length === 0) {
     ctx.status = 400;
     ctx.body = { success: false, message: '当前筛选条件下没有数据可导出' };
     return;
@@ -228,27 +241,24 @@ router.get('/api/export', async (ctx) => {
 
   if (format === 'csv') {
     // CSV 格式导出（文件更小，下载更快）
-    const BOM = '\uFEFF'; // UTF-8 BOM，确保 Excel 正确识别中文
-    const header = '城市群,门店/仓编码,商品SKU,核查量\n';
-    const rows = result.map(row => {
-      const city = String(row['城市群'] || '').replace(/,/g, '，');
-      const store = String(row['门店/仓编码'] || '');
-      const sku = String(row['商品SKU'] || '');
-      const qty = Number(row['核查量']) || 0;
-      return `${city},${store},${sku},${qty}`;
-    }).join('\n');
+    const BOM = '\uFEFF';
+    const lines = new Array(filtered.length + 1);
+    lines[0] = '城市群,门店/仓编码,商品SKU,核查量';
+    for (let i = 0; i < filtered.length; i++) {
+      const r = filtered[i];
+      lines[i + 1] = `${String(r[COL_CITY]).replace(/,/g, '，')},${r[COL_STORE]},${r[COL_SKU]},${r[COL_QTY]}`;
+    }
 
     ctx.set('Content-Type', 'text/csv; charset=utf-8');
     ctx.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent('集单池_' + today + '.csv')}`);
-    ctx.body = BOM + header + rows;
+    ctx.body = BOM + lines.join('\n');
   } else {
     // XLSX 格式导出
-    const exportData = result.map(row => ({
-      '城市群': row['城市群'] || '',
-      '门店/仓编码': row['门店/仓编码'] || '',
-      '商品SKU': String(row['商品SKU'] || ''),
-      '核查量': Number(row['核查量']) || 0
-    }));
+    const exportData = new Array(filtered.length);
+    for (let i = 0; i < filtered.length; i++) {
+      const r = filtered[i];
+      exportData[i] = { '城市群': r[COL_CITY], '门店/仓编码': r[COL_STORE], '商品SKU': r[COL_SKU], '核查量': r[COL_QTY] };
+    }
 
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
@@ -283,7 +293,7 @@ router.post('/api/revoke', async (ctx) => {
   }
 
   // 移除数据
-  dataPool = dataPool.filter(d => d._uploadId !== uploadId);
+  dataPool = dataPool.filter(d => d[COL_UPLOAD_ID] !== uploadId);
   uploadRecords = uploadRecords.filter(r => r.id !== uploadId);
 
   ctx.body = { success: true, message: '撤回成功' };
