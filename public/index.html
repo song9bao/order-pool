@@ -72,6 +72,27 @@
     .city-checkboxes input[type="checkbox"]:checked + span { color: var(--primary-dark); font-weight: 500; }
     .city-checkboxes label:has(input:checked) { border-color: var(--primary-dark); background: var(--primary-light); }
 
+    /* 可搜索下拉多选组件 */
+    .multi-select { position: relative; width: 220px; }
+    .multi-select .ms-trigger { display: flex; flex-wrap: wrap; gap: 4px; min-height: 34px; padding: 4px 28px 4px 8px; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; background: var(--bg-white); align-items: center; transition: border-color 0.2s; }
+    .multi-select .ms-trigger:hover, .multi-select.open .ms-trigger { border-color: var(--primary-dark); }
+    .multi-select .ms-tag { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; background: var(--primary-light); border-radius: 3px; font-size: 12px; color: var(--primary-dark); max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .multi-select .ms-tag .ms-tag-close { cursor: pointer; font-size: 14px; line-height: 1; margin-left: 2px; color: var(--text-hint); }
+    .multi-select .ms-tag .ms-tag-close:hover { color: var(--danger); }
+    .multi-select .ms-placeholder { color: var(--text-hint); font-size: 13px; }
+    .multi-select .ms-arrow { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 10px; color: var(--text-hint); pointer-events: none; }
+    .multi-select .ms-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--bg-white); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); z-index: 200; display: none; max-height: 240px; overflow: hidden; flex-direction: column; }
+    .multi-select.open .ms-dropdown { display: flex; }
+    .multi-select .ms-search { padding: 8px; border-bottom: 1px solid var(--border); }
+    .multi-select .ms-search input { width: 100%; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; outline: none; }
+    .multi-select .ms-search input:focus { border-color: var(--primary-dark); }
+    .multi-select .ms-list { overflow-y: auto; max-height: 180px; padding: 4px 0; }
+    .multi-select .ms-item { display: flex; align-items: center; gap: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px; transition: background 0.15s; }
+    .multi-select .ms-item:hover { background: var(--primary-light); }
+    .multi-select .ms-item.selected { color: var(--primary-dark); font-weight: 500; }
+    .multi-select .ms-item input[type="checkbox"] { accent-color: var(--primary-dark); pointer-events: none; }
+    .multi-select .ms-empty { padding: 12px; text-align: center; font-size: 12px; color: var(--text-hint); }
+
     /* 按钮 */
     .btn { display: inline-flex; align-items: center; gap: 4px; padding: 7px 16px; border: none; border-radius: 4px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; line-height: 1.4; }
     .btn-primary { background: var(--primary); color: var(--text-primary); }
@@ -180,19 +201,29 @@
       <div class="filter-bar">
         <div class="filter-group">
           <label>门店/仓编码</label>
-          <input type="text" id="filterStore" placeholder="输入门店/仓编码" />
+          <div class="multi-select" id="storeMultiSelect">
+            <div class="ms-trigger" onclick="toggleDropdown('storeMultiSelect')">
+              <span class="ms-placeholder">选择门店（可搜索）</span>
+            </div>
+            <span class="ms-arrow">▼</span>
+            <div class="ms-dropdown">
+              <div class="ms-search"><input type="text" placeholder="搜索门店编码..." oninput="filterDropdown('storeMultiSelect', this.value)" /></div>
+              <div class="ms-list"></div>
+            </div>
+          </div>
         </div>
         <div class="filter-group">
           <label>上传人</label>
-          <select id="filterUploader" style="padding:7px 12px;border:1px solid var(--border);border-radius:4px;font-size:13px;width:150px;outline:none;background:var(--bg-white);">
-            <option value="">全部</option>
-          </select>
-        </div>
-      </div>
-      <div style="margin-top:12px;">
-        <div style="font-size:12px;color:var(--text-hint);font-weight:500;margin-bottom:4px;">门店/仓编码（多选筛选）</div>
-        <div class="city-checkboxes" id="storeCheckboxes">
-          <span style="font-size:12px;color:var(--text-hint);">暂无门店数据，上传后自动显示</span>
+          <div class="multi-select" id="uploaderMultiSelect">
+            <div class="ms-trigger" onclick="toggleDropdown('uploaderMultiSelect')">
+              <span class="ms-placeholder">选择上传人（可搜索）</span>
+            </div>
+            <span class="ms-arrow">▼</span>
+            <div class="ms-dropdown">
+              <div class="ms-search"><input type="text" placeholder="搜索上传人..." oninput="filterDropdown('uploaderMultiSelect', this.value)" /></div>
+              <div class="ms-list"></div>
+            </div>
+          </div>
         </div>
       </div>
       <div style="margin-top:12px;">
@@ -343,21 +374,79 @@
       return Array.from(checks).map(c => c.value);
     }
 
-    function getSelectedStores() {
-      const checks = document.querySelectorAll('#storeCheckboxes input[type="checkbox"]:checked');
-      return Array.from(checks).map(c => c.value);
+    // 可搜索下拉多选组件逻辑
+    const msData = { storeMultiSelect: { options: [], selected: [] }, uploaderMultiSelect: { options: [], selected: [] } };
+
+    function toggleDropdown(id) {
+      const el = document.getElementById(id);
+      const isOpen = el.classList.contains('open');
+      // 关闭所有其他下拉
+      document.querySelectorAll('.multi-select.open').forEach(e => e.classList.remove('open'));
+      if (!isOpen) { el.classList.add('open'); el.querySelector('.ms-search input').focus(); }
     }
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.multi-select')) {
+        document.querySelectorAll('.multi-select.open').forEach(el => el.classList.remove('open'));
+      }
+    });
+
+    function renderMultiSelect(id) {
+      const container = document.getElementById(id);
+      const data = msData[id];
+      const trigger = container.querySelector('.ms-trigger');
+      if (data.selected.length === 0) {
+        trigger.innerHTML = `<span class="ms-placeholder">${id === 'storeMultiSelect' ? '选择门店（可搜索）' : '选择上传人（可搜索）'}</span>`;
+      } else {
+        trigger.innerHTML = data.selected.map(v => `<span class="ms-tag">${v}<span class="ms-tag-close" onclick="event.stopPropagation();removeTag('${id}','${v}')">×</span></span>`).join('');
+      }
+      renderList(id, '');
+    }
+
+    function renderList(id, keyword) {
+      const data = msData[id];
+      const list = document.getElementById(id).querySelector('.ms-list');
+      const kw = keyword.toLowerCase();
+      const filtered = kw ? data.options.filter(o => o.toLowerCase().includes(kw)) : data.options;
+      if (filtered.length === 0) {
+        list.innerHTML = '<div class="ms-empty">无匹配项</div>';
+        return;
+      }
+      list.innerHTML = filtered.map(o => {
+        const checked = data.selected.includes(o);
+        return `<div class="ms-item ${checked ? 'selected' : ''}" onclick="toggleItem('${id}','${o}')">
+          <input type="checkbox" ${checked ? 'checked' : ''} /><span>${o}</span>
+        </div>`;
+      }).join('');
+    }
+
+    function filterDropdown(id, keyword) { renderList(id, keyword); }
+
+    function toggleItem(id, value) {
+      const data = msData[id];
+      const idx = data.selected.indexOf(value);
+      if (idx >= 0) data.selected.splice(idx, 1);
+      else data.selected.push(value);
+      renderMultiSelect(id);
+    }
+
+    function removeTag(id, value) {
+      const data = msData[id];
+      data.selected = data.selected.filter(v => v !== value);
+      renderMultiSelect(id);
+    }
+
+    function getSelectedStores() { return msData.storeMultiSelect.selected; }
+    function getSelectedUploaders() { return msData.uploaderMultiSelect.selected; }
 
     async function doQuery() {
       const p = new URLSearchParams();
-      const store = document.getElementById('filterStore').value.trim();
-      if (store) p.set('store', store);
       const stores = getSelectedStores();
       if (stores.length) p.set('stores', stores.join(','));
       const cities = getSelectedCities();
       if (cities.length) p.set('cities', cities.join(','));
-      const uploader = document.getElementById('filterUploader').value;
-      if (uploader) p.set('uploader', uploader);
+      const uploaders = getSelectedUploaders();
+      if (uploaders.length) p.set('uploaders', uploaders.join(','));
 
       try {
         const resp = await fetch('/api/query?' + p.toString());
@@ -391,8 +480,8 @@
       if (stores.length) p.set('stores', stores.join(','));
       const cities = getSelectedCities();
       if (cities.length) p.set('cities', cities.join(','));
-      const uploader = document.getElementById('filterUploader').value;
-      if (uploader) p.set('uploader', uploader);
+      const uploaders = getSelectedUploaders();
+      if (uploaders.length) p.set('uploaders', uploaders.join(','));
       if (format) p.set('format', format);
       // 直接用链接下载，避免大文件 blob 卡死浏览器
       window.open('/api/export?' + p.toString(), '_blank');
@@ -477,11 +566,11 @@
       try {
         const resp = await fetch('/api/stores');
         const data = await resp.json();
-        if (data.success && data.stores.length > 0) {
-          const container = document.getElementById('storeCheckboxes');
-          container.innerHTML = data.stores.map(s => 
-            `<label><input type="checkbox" value="${s}"><span>${s}</span></label>`
-          ).join('');
+        if (data.success) {
+          msData.storeMultiSelect.options = data.stores;
+          // 保留已选中但仍存在的项
+          msData.storeMultiSelect.selected = msData.storeMultiSelect.selected.filter(s => data.stores.includes(s));
+          renderMultiSelect('storeMultiSelect');
         }
       } catch (err) {}
     }
@@ -491,8 +580,9 @@
         const resp = await fetch('/api/uploaders');
         const data = await resp.json();
         if (data.success) {
-          const sel = document.getElementById('filterUploader');
-          sel.innerHTML = '<option value="">全部</option>' + data.uploaders.map(u => `<option value="${u}">${u}</option>`).join('');
+          msData.uploaderMultiSelect.options = data.uploaders;
+          msData.uploaderMultiSelect.selected = msData.uploaderMultiSelect.selected.filter(u => data.uploaders.includes(u));
+          renderMultiSelect('uploaderMultiSelect');
         }
       } catch (err) {}
     }
@@ -502,6 +592,10 @@
     loadUploaders();
     refreshStats();
     doQuery();
+
+    // 初始化多选下拉的渲染
+    renderMultiSelect('storeMultiSelect');
+    renderMultiSelect('uploaderMultiSelect');
   </script>
 </body>
 </html>

@@ -182,9 +182,9 @@ router.get('/api/stores', async (ctx) => {
   ctx.body = { success: true, stores: [...storeSet].sort() };
 });
 
-// 查询接口（按门店分组汇总，支持城市群+门店多选+上传人筛选）
+// 查询接口（按门店分组汇总，支持城市群+门店多选+上传人多选筛选）
 router.get('/api/query', async (ctx) => {
-  const { store, stores, cities, uploader } = ctx.query;
+  const { store, stores, cities, uploader, uploaders } = ctx.query;
   const cityList = cities ? cities.split(',').map(c => c.trim()).filter(Boolean) : [];
   const citySet = cityList.length > 0 ? new Set(cityList) : null;
   const storeList = stores ? stores.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -194,11 +194,13 @@ router.get('/api/query', async (ctx) => {
   const recMap = new Map();
   uploadRecords.forEach(r => recMap.set(r.id, r));
 
-  // 上传人筛选：找出匹配的 uploadId 集合
+  // 上传人筛选（支持多选）：找出匹配的 uploadId 集合
   let uploaderIds = null;
-  if (uploader) {
+  const uploaderList = uploaders ? uploaders.split(',').map(u => u.trim()).filter(Boolean) : (uploader ? [uploader] : []);
+  if (uploaderList.length > 0) {
+    const uploaderSet = new Set(uploaderList);
     uploaderIds = new Set();
-    uploadRecords.forEach(r => { if (r.uploader === uploader) uploaderIds.add(r.id); });
+    uploadRecords.forEach(r => { if (uploaderSet.has(r.uploader)) uploaderIds.add(r.id); });
   }
 
   // 按门店/仓编码分组汇总
@@ -242,19 +244,21 @@ router.get('/api/stats', async (ctx) => {
   };
 });
 
-// 导出接口（支持按城市群+门店多选+上传人筛选，支持 format=csv）
+// 导出接口（支持按城市群+门店多选+上传人多选筛选，支持 format=csv）
 router.get('/api/export', async (ctx) => {
-  const { cities, stores, format, uploader } = ctx.query;
+  const { cities, stores, format, uploader, uploaders } = ctx.query;
   const cityList = cities ? cities.split(',').map(c => c.trim()).filter(Boolean) : [];
   const citySet = cityList.length > 0 ? new Set(cityList) : null;
   const storeList = stores ? stores.split(',').map(s => s.trim()).filter(Boolean) : [];
   const storeSet = storeList.length > 0 ? new Set(storeList) : null;
 
-  // 上传人筛选：找出匹配的 uploadId 集合
+  // 上传人筛选（支持多选）：找出匹配的 uploadId 集合
   let uploaderIds = null;
-  if (uploader) {
+  const uploaderList = uploaders ? uploaders.split(',').map(u => u.trim()).filter(Boolean) : (uploader ? [uploader] : []);
+  if (uploaderList.length > 0) {
+    const uploaderSet = new Set(uploaderList);
     uploaderIds = new Set();
-    uploadRecords.forEach(r => { if (r.uploader === uploader) uploaderIds.add(r.id); });
+    uploadRecords.forEach(r => { if (uploaderSet.has(r.uploader)) uploaderIds.add(r.id); });
   }
 
   // 筛选数据
