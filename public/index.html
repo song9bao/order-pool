@@ -361,22 +361,12 @@
       </tr>`).join('');
     }
 
-    async function doExport() {
-      try {
-        const p = new URLSearchParams();
-        const cities = getSelectedCities();
-        if (cities.length) p.set('cities', cities.join(','));
-        const resp = await fetch('/api/export?' + p.toString());
-        if (!resp.ok) { const e = await resp.json(); showToast(e.message, 'error'); return; }
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `集单池_${new Date().toISOString().slice(0,10)}.xlsx`;
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast('导出成功', 'success');
-      } catch (err) { showToast('导出失败', 'error'); }
+    function doExport() {
+      const p = new URLSearchParams();
+      const cities = getSelectedCities();
+      if (cities.length) p.set('cities', cities.join(','));
+      // 直接用链接下载，避免大文件 blob 卡死浏览器
+      window.open('/api/export?' + p.toString(), '_blank');
     }
 
     async function refreshStats() {
