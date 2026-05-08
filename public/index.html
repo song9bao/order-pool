@@ -182,6 +182,12 @@
           <label>门店/仓编码</label>
           <input type="text" id="filterStore" placeholder="输入门店/仓编码" />
         </div>
+        <div class="filter-group">
+          <label>上传人</label>
+          <select id="filterUploader" style="padding:7px 12px;border:1px solid var(--border);border-radius:4px;font-size:13px;width:150px;outline:none;background:var(--bg-white);">
+            <option value="">全部</option>
+          </select>
+        </div>
       </div>
       <div style="margin-top:12px;">
         <div style="font-size:12px;color:var(--text-hint);font-weight:500;margin-bottom:4px;">城市群（多选筛选）</div>
@@ -302,6 +308,7 @@
         if (data.success) {
           showToast(data.message, 'success');
           loadCities();
+          loadUploaders();
           refreshStats();
           doQuery();
         } else if (data.duplicates) {
@@ -335,6 +342,8 @@
       if (store) p.set('store', store);
       const cities = getSelectedCities();
       if (cities.length) p.set('cities', cities.join(','));
+      const uploader = document.getElementById('filterUploader').value;
+      if (uploader) p.set('uploader', uploader);
 
       try {
         const resp = await fetch('/api/query?' + p.toString());
@@ -366,6 +375,8 @@
       const p = new URLSearchParams();
       const cities = getSelectedCities();
       if (cities.length) p.set('cities', cities.join(','));
+      const uploader = document.getElementById('filterUploader').value;
+      if (uploader) p.set('uploader', uploader);
       if (format) p.set('format', format);
       // 直接用链接下载，避免大文件 blob 卡死浏览器
       window.open('/api/export?' + p.toString(), '_blank');
@@ -446,7 +457,19 @@
       } catch (err) {}
     }
 
+    async function loadUploaders() {
+      try {
+        const resp = await fetch('/api/uploaders');
+        const data = await resp.json();
+        if (data.success) {
+          const sel = document.getElementById('filterUploader');
+          sel.innerHTML = '<option value="">全部</option>' + data.uploaders.map(u => `<option value="${u}">${u}</option>`).join('');
+        }
+      } catch (err) {}
+    }
+
     loadCities();
+    loadUploaders();
     refreshStats();
     doQuery();
   </script>

@@ -166,9 +166,15 @@ router.get('/api/cities', async (ctx) => {
   ctx.body = { success: true, cities: [...citySet].sort() };
 });
 
-// 查询接口（按门店分组汇总，支持城市群多选筛选）
+// 获取所有上传人列表（用于前端下拉筛选）
+router.get('/api/uploaders', async (ctx) => {
+  const uploaders = uploadRecords.map(r => r.uploader).filter(Boolean);
+  ctx.body = { success: true, uploaders: [...new Set(uploaders)].sort() };
+});
+
+// 查询接口（按门店分组汇总，支持城市群+上传人筛选）
 router.get('/api/query', async (ctx) => {
-  const { store, cities } = ctx.query;
+  const { store, cities, uploader } = ctx.query;
   const cityList = cities ? cities.split(',').map(c => c.trim()).filter(Boolean) : [];
   const citySet = cityList.length > 0 ? new Set(cityList) : null;
 
@@ -176,12 +182,21 @@ router.get('/api/query', async (ctx) => {
   const recMap = new Map();
   uploadRecords.forEach(r => recMap.set(r.id, r));
 
+  // 上传人筛选：找出匹配的 uploadId 集合
+  let uploaderIds = null;
+  if (uploader) {
+    uploaderIds = new Set();
+    uploadRecords.forEach(r => { if (r.uploader === uploader) uploaderIds.add(r.id); });
+  }
+
   // 按门店/仓编码分组汇总
   const groupMap = {};
   for (let i = 0; i < dataPool.length; i++) {
     const row = dataPool[i];
     // 城市群筛选
     if (citySet && !citySet.has(row[COL_CITY])) continue;
+    // 上传人筛选
+    if (uploaderIds && !uploaderIds.has(row[COL_UPLOAD_ID])) continue;
     // 门店筛选
     const storeId = String(row[COL_STORE]);
     if (store && !storeId.includes(store)) continue;
@@ -214,18 +229,29 @@ router.get('/api/stats', async (ctx) => {
   };
 });
 
-// 导出接口（支持按城市群筛选，支持 format=csv）
+// 导出接口（支持按城市群+上传人筛选，支持 format=csv）
 router.get('/api/export', async (ctx) => {
-  const { cities, format } = ctx.query;
+  const { cities, format, uploader } = ctx.query;
   const cityList = cities ? cities.split(',').map(c => c.trim()).filter(Boolean) : [];
   const citySet = cityList.length > 0 ? new Set(cityList) : null;
 
-  // 筛选数据（不复制整个数组，用索引记录）
+  // 上传人筛选：找出匹配的 uploadId 集合
+  let uploaderIds = null;
+  if (uploader) {
+    uploaderIds = new Set();
+    uploadRecords.forEach(r => { if (r.uploader === uploader) uploaderIds.add(r.id); });
+  }
+
+  // 筛选数据
+  const needFilter = citySet || uploaderIds;
   let filtered;
-  if (citySet) {
+  if (needFilter) {
     filtered = [];
     for (let i = 0; i < dataPool.length; i++) {
-      if (citySet.has(dataPool[i][COL_CITY])) filtered.push(dataPool[i]);
+      const row = dataPool[i];
+      if (citySet && !citySet.has(row[COL_CITY])) continue;
+      if (uploaderIds && !uploaderIds.has(row[COL_UPLOAD_ID])) continue;
+      filtered.push(row);
     }
   } else {
     filtered = dataPool;
